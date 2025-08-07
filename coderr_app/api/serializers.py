@@ -54,6 +54,17 @@ class BusinessProfileListSerializer(serializers.ModelSerializer):
             'user', 'username', 'first_name', 'last_name', 'file', 
             'location', 'tel', 'description', 'working_hours', 'type'
         ]
+    
+    def to_representation(self, instance):
+        """
+        Stellt sicher, dass alle Felder niemals null sind, sondern leere Strings.
+        """
+        data = super().to_representation(instance)
+        # Stelle sicher, dass alle Felder niemals null sind
+        for field in ['first_name', 'last_name', 'location', 'tel', 'description', 'working_hours']:
+            if data.get(field) is None:
+                data[field] = ''
+        return data
 
 
 class CustomerProfileListSerializer(serializers.ModelSerializer):
@@ -69,6 +80,17 @@ class CustomerProfileListSerializer(serializers.ModelSerializer):
             'user', 'username', 'first_name', 'last_name', 'file', 
             'location', 'tel', 'description', 'working_hours', 'type'
         ]
+    
+    def to_representation(self, instance):
+        """
+        Stellt sicher, dass alle Felder niemals null sind, sondern leere Strings.
+        """
+        data = super().to_representation(instance)
+        # Stelle sicher, dass alle Felder niemals null sind
+        for field in ['first_name', 'last_name', 'location', 'tel', 'description', 'working_hours']:
+            if data.get(field) is None:
+                data[field] = ''
+        return data
 
 
 class OfferDetailSerializer(serializers.ModelSerializer):
@@ -288,6 +310,16 @@ class OrderSerializer(serializers.ModelSerializer):
             'delivery_time_in_days', 'price', 'features', 'offer_type',
             'created_at', 'updated_at'
         ]
+    
+    def to_representation(self, instance):
+        """
+        Stellt sicher, dass alle Felder korrekt serialisiert werden.
+        """
+        data = super().to_representation(instance)
+        # Stelle sicher, dass features immer eine Liste ist
+        if data.get('features') is None:
+            data['features'] = []
+        return data
 
 
 class OrderCreateSerializer(serializers.ModelSerializer):

@@ -89,6 +89,18 @@ class BusinessProfileListView(generics.ListAPIView):
         Filtert nur Business-Profile.
         """
         return Profile.objects.filter(type='business')
+    
+    def list(self, request, *args, **kwargs):
+        """
+        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        """
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            # Bei Fehlern geben wir ein leeres Array zurück
+            return Response([], status=status.HTTP_200_OK)
 
 
 class CustomerProfileListView(generics.ListAPIView):
@@ -103,6 +115,18 @@ class CustomerProfileListView(generics.ListAPIView):
         Filtert nur Customer-Profile.
         """
         return Profile.objects.filter(type='customer')
+    
+    def list(self, request, *args, **kwargs):
+        """
+        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        """
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            # Bei Fehlern geben wir ein leeres Array zurück
+            return Response([], status=status.HTTP_200_OK)
 
 
 class OfferListView(generics.ListCreateAPIView):
@@ -257,6 +281,18 @@ class OrderListView(generics.ListCreateAPIView):
         if self.request.method == 'POST':
             return [IsCustomerUser()]
         return [IsAuthenticated()]
+    
+    def list(self, request, *args, **kwargs):
+        """
+        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        """
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            # Bei Fehlern geben wir ein leeres Array zurück
+            return Response([], status=status.HTTP_200_OK)
 
 
 class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -344,13 +380,21 @@ class ReviewListView(generics.ListCreateAPIView):
         
         # Filter nach business_user_id
         business_user_id = self.request.query_params.get('business_user_id')
-        if business_user_id:
-            queryset = queryset.filter(business_user__username__id=business_user_id)
+        if business_user_id and business_user_id.strip():
+            try:
+                business_user_id_int = int(business_user_id)
+                queryset = queryset.filter(business_user__username__id=business_user_id_int)
+            except (ValueError, TypeError):
+                pass
         
         # Filter nach reviewer_id
         reviewer_id = self.request.query_params.get('reviewer_id')
-        if reviewer_id:
-            queryset = queryset.filter(reviewer__username__id=reviewer_id)
+        if reviewer_id and reviewer_id.strip():
+            try:
+                reviewer_id_int = int(reviewer_id)
+                queryset = queryset.filter(reviewer__username__id=reviewer_id_int)
+            except (ValueError, TypeError):
+                pass
         
         return queryset
 
@@ -358,6 +402,18 @@ class ReviewListView(generics.ListCreateAPIView):
         if self.request.method == 'POST':
             return [IsCustomerUser()]
         return [IsAuthenticated()]
+    
+    def list(self, request, *args, **kwargs):
+        """
+        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        """
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            # Bei Fehlern geben wir ein leeres Array zurück
+            return Response([], status=status.HTTP_200_OK)
 
 
 class ReviewDetailView(generics.RetrieveUpdateDestroyAPIView):

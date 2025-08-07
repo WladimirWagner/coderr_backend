@@ -39,35 +39,24 @@ class RegistrationSerializer(serializers.ModelSerializer):
 
 class LoginSerializer(serializers.Serializer):
     """
-    Handles user authentication with email/username and password.
+    Handles user authentication with username and password.
     Validates credentials and returns user object if successful.
     """
-    email = serializers.CharField(required=False)
-    username = serializers.CharField(required=False)
+    username = serializers.CharField()
     password = serializers.CharField()
 
     def validate(self, data):
-        email = data.get("email")
         username = data.get("username")
         password = data.get("password")
 
-        if not email and not username:
-            raise serializers.ValidationError({'error': 'Email or username is required.'})
+        if not username:
+            raise serializers.ValidationError({'error': 'Username is required.'})
 
         if not password:
             raise serializers.ValidationError({'error': 'Password is required.'})
 
-        # Try to find user by email or username
-        try:
-            if email:
-                user = User.objects.get(email=email)
-            else:
-                user = User.objects.get(username=username)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({'error': 'Invalid credentials.'})
-
         # Authenticate user
-        user = authenticate(username=user.username, password=password)
+        user = authenticate(username=username, password=password)
 
         if user is None:
             raise serializers.ValidationError({'error': 'Invalid credentials.'})
