@@ -4,15 +4,15 @@ from django.contrib.auth.models import User
 
 class Profile(models.Model):
     """
-    Profil-Model für Benutzer der Plattform.
+    Profile model for platform users.
     
-    Erweitert das Django User-Model um zusätzliche Informationen wie
-    Benutzertyp (Business/Customer), Kontaktdaten und Arbeitszeiten.
+    Extends Django's User with profile type (business/customer), contact
+    information, and working hours.
     """
     
     TYPE_CHOICES = [
-        ('business', 'Business'),  # Anbieter von Dienstleistungen
-        ('customer', 'Customer'),  # Kunden, die Dienstleistungen suchen
+        ('business', 'Business'),
+        ('customer', 'Customer'),
     ]
 
     username = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -28,16 +28,16 @@ class Profile(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        """String-Repräsentation des Profils"""
+        """String representation of the profile."""
         return f"{self.username.username} - {self.type}"
 
 
 class Offer(models.Model):
     """
-    Angebot-Model für Dienstleistungen.
+    Offer model for services.
     
-    Repräsentiert ein Dienstleistungsangebot eines Business-Users.
-    Jedes Angebot kann mehrere Details (Basic, Standard, Premium) haben.
+    Represents a service offering by a business user. Each offer can have
+    multiple details (basic, standard, premium).
     """
     user = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='offers')
     title = models.CharField(max_length=255)
@@ -47,16 +47,16 @@ class Offer(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        """String-Repräsentation des Angebots"""
+        """String representation of the offer."""
         return f"{self.title} by {self.user.username.username}"
 
     @property
     def min_price(self):
         """
-        Berechnet den minimalen Preis aller OfferDetails.
+        Compute minimal price across all offer details.
         
         Returns:
-            Decimal: Der niedrigste Preis aller Details oder 0 wenn keine Details vorhanden
+            Decimal: Lowest price among details or 0 if none exist
         """
         details = self.details.all()
         if details.exists():
@@ -66,10 +66,10 @@ class Offer(models.Model):
     @property
     def min_delivery_time(self):
         """
-        Berechnet die kürzeste Lieferzeit aller OfferDetails.
+        Compute shortest delivery time across all offer details.
         
         Returns:
-            int: Die kürzeste Lieferzeit in Tagen oder 0 wenn keine Details vorhanden
+            int: Shortest delivery time in days or 0 if none exist
         """
         details = self.details.all()
         if details.exists():
@@ -79,10 +79,10 @@ class Offer(models.Model):
 
 class OfferDetail(models.Model):
     """
-    Detail-Model für Angebote.
+    Offer detail model.
     
-    Jedes Angebot kann mehrere Details haben (Basic, Standard, Premium),
-    die unterschiedliche Preise, Lieferzeiten und Features bieten.
+    Each offer can have multiple detail tiers (basic, standard, premium)
+    with different prices, delivery times and features.
     """
     OFFER_TYPE_CHOICES = [
         ('basic', 'Basic'),
@@ -99,16 +99,16 @@ class OfferDetail(models.Model):
     offer_type = models.CharField(max_length=20, choices=OFFER_TYPE_CHOICES)
 
     def __str__(self):
-        """String-Repräsentation des Angebotdetails"""
+        """String representation of the offer detail."""
         return f"{self.title} - {self.offer_type}"
 
 
 class Order(models.Model):
     """
-    Bestellungs-Model für Aufträge.
+    Order model.
     
-    Repräsentiert eine Bestellung eines Kunden bei einem Business-User.
-    Die Bestellung basiert auf einem spezifischen OfferDetail.
+    Represents a customer's order for a specific offer detail provided by a
+    business user.
     """
     STATUS_CHOICES = [
         ('in_progress', 'In Progress'),
@@ -130,15 +130,12 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        """String-Repräsentation der Bestellung"""
+        """String representation of the order."""
         return f"Order {self.id} - {self.title} ({self.status})"
 
     def save(self, *args, **kwargs):
         """
-        Überschreibt die save-Methode um Daten vom OfferDetail zu kopieren.
-        
-        Beim Erstellen einer neuen Bestellung werden die Daten automatisch
-        vom zugehörigen OfferDetail übernommen.
+        Override save to copy fields from the referenced offer detail on creation.
         """
         if not self.pk and self.offer_detail:
             self.title = self.offer_detail.title
@@ -153,9 +150,9 @@ class Order(models.Model):
 
 class Review(models.Model):
     """
-    Bewertungs-Model für Reviews.
+    Review model.
     
-    Ermöglicht es Kunden, Business-User nach abgeschlossenen Aufträgen zu bewerten.
+    Allows customers to review business users after orders.
     """
     business_user = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='reviews_received')
     reviewer = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='reviews_given')
@@ -165,6 +162,6 @@ class Review(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        """String-Repräsentation der Bewertung"""
+        """String representation of the review."""
         return f"Review by {self.reviewer} for {self.business_user}"
 

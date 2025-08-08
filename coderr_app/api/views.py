@@ -1,6 +1,6 @@
 from rest_framework import status, generics
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -19,6 +19,7 @@ from coderr_app.api.serializers import (
     OfferDetailViewSerializer,
     OfferCreateSerializer,
     OfferUpdateSerializer,
+    OfferWithDetailsSerializer,
     OfferDetailSerializer,
     OrderSerializer,
     OrderCreateSerializer,
@@ -39,14 +40,14 @@ from coderr_app.api.permissions import (
 
 class ProfileDetailView(generics.RetrieveUpdateAPIView):
     """
-    View für GET und PATCH Operationen auf einem spezifischen Profil.
+    Retrieve and partially update a specific profile.
     """
     serializer_class = ProfileSerializer
     permission_classes = [IsAuthenticated, IsProfileOwner]
     
     def get_object(self):
         """
-        Holt das Profil basierend auf der User-ID aus der URL.
+        Resolve profile by user id from the URL path.
         """
         user_id = self.kwargs.get('pk')
         user = get_object_or_404(User, id=user_id)
@@ -55,7 +56,7 @@ class ProfileDetailView(generics.RetrieveUpdateAPIView):
     
     def get_serializer_class(self):
         """
-        Verwendet unterschiedliche Serializer für GET und PATCH.
+        Use different serializers for GET and PATCH.
         """
         if self.request.method == 'PATCH':
             return ProfileUpdateSerializer
@@ -63,7 +64,7 @@ class ProfileDetailView(generics.RetrieveUpdateAPIView):
     
     def patch(self, request, *args, **kwargs):
         """
-        PATCH Operation für Profilaktualisierung.
+        Partially update profile and return the full representation.
         """
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
@@ -79,62 +80,65 @@ class ProfileDetailView(generics.RetrieveUpdateAPIView):
 
 class BusinessProfileListView(generics.ListAPIView):
     """
-    View für die Liste aller Business-Profile.
+    List all business profiles.
     """
     serializer_class = BusinessProfileListSerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         """
-        Filtert nur Business-Profile.
+        Return only business profiles.
         """
         return Profile.objects.filter(type='business')
     
     def list(self, request, *args, **kwargs):
         """
-        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        Always return an array (empty on errors) for consistency.
         """
         try:
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
-            # Bei Fehlern geben wir ein leeres Array zurück
+            # On error return an empty array
             return Response([], status=status.HTTP_200_OK)
 
 
 class CustomerProfileListView(generics.ListAPIView):
     """
-    View für die Liste aller Customer-Profile.
+    List all customer profiles.
     """
     serializer_class = CustomerProfileListSerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         """
-        Filtert nur Customer-Profile.
+        Return only customer profiles.
         """
         return Profile.objects.filter(type='customer')
     
     def list(self, request, *args, **kwargs):
         """
-        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        Always return an array (empty on errors) for consistency.
         """
         try:
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
-            # Bei Fehlern geben wir ein leeres Array zurück
+            # On error return an empty array
             return Response([], status=status.HTTP_200_OK)
+
+
+class OfferPagination(PageNumberPagination):
+    page_size_query_param = 'page_size'
 
 
 class OfferListView(generics.ListCreateAPIView):
     """
-    View für die Liste und Erstellung von Offers.
+    List offers (public) and create offers (business users).
     """
-    permission_classes = [IsAuthenticated]
-    pagination_class = PageNumberPagination
+    pagination_class = OfferPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['user__username__id']
     search_fields = ['title', 'description']
@@ -143,8 +147,7 @@ class OfferListView(generics.ListCreateAPIView):
     
     def get_paginated_response(self, data):
         """
-        Überschreibt die Standard-Pagination-Antwort um sicherzustellen,
-        dass immer eine korrekte Struktur zurückgegeben wird.
+        Ensure a consistent paginated structure in the response.
         """
         paginator = self.paginator
         return Response({
@@ -156,52 +159,55 @@ class OfferListView(generics.ListCreateAPIView):
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
+            # Für Erstellung nehmen wir den Create-Serializer für Validierung,
+            # aber wir werden die Response mit OfferWithDetailsSerializer bauen
             return OfferCreateSerializer
         return OfferListSerializer
 
     def get_queryset(self):
         queryset = Offer.objects.all()
         
-        # Filter nach creator_id
+        # Filter by creator_id
         creator_id = self.request.query_params.get('creator_id')
         if creator_id and creator_id.strip() and creator_id != "":
             try:
                 creator_id_int = int(creator_id)
                 queryset = queryset.filter(user__username__id=creator_id_int)
             except (ValueError, TypeError):
-                # Wenn creator_id nicht konvertiert werden kann, ignoriere den Filter
+                # Ignore filter if conversion fails
                 pass
         
-        # Filter nach min_price
+        # Filter by min_price
         min_price = self.request.query_params.get('min_price')
         if min_price and min_price.strip() and min_price != "":
             try:
                 min_price_decimal = Decimal(min_price)
                 queryset = queryset.filter(details__price__gte=min_price_decimal).distinct()
             except (ValueError, TypeError):
-                # Wenn min_price nicht konvertiert werden kann, ignoriere den Filter
+                # Ignore filter if conversion fails
                 pass
         
-        # Filter nach max_delivery_time
+        # Filter by max_delivery_time
         max_delivery_time = self.request.query_params.get('max_delivery_time')
         if max_delivery_time and max_delivery_time.strip() and max_delivery_time != "":
             try:
                 max_delivery_time_int = int(max_delivery_time)
                 queryset = queryset.filter(details__delivery_time_in_days__lte=max_delivery_time_int).distinct()
             except (ValueError, TypeError):
-                # Wenn max_delivery_time nicht konvertiert werden kann, ignoriere den Filter
+                # Ignore filter if conversion fails
                 pass
         
         return queryset
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsBusinessUser()]
-        return [IsAuthenticated()]
+            return [IsAuthenticated(), IsBusinessUser()]
+        # GET, HEAD, OPTIONS do not require authentication
+        return [AllowAny()]
     
     def list(self, request, *args, **kwargs):
         """
-        Überschreibt die list-Methode um sicherzustellen, dass immer eine korrekte Antwort zurückgegeben wird.
+        Return paginated response or a consistent results envelope.
         """
         try:
             queryset = self.filter_queryset(self.get_queryset())
@@ -218,7 +224,7 @@ class OfferListView(generics.ListCreateAPIView):
                 'results': serializer.data
             })
         except Exception as e:
-            # Fallback bei Fehlern
+            # Fallback on error
             return Response({
                 'count': 0,
                 'next': None,
@@ -226,12 +232,25 @@ class OfferListView(generics.ListCreateAPIView):
                 'results': []
             }, status=status.HTTP_200_OK)
 
+    def create(self, request, *args, **kwargs):
+        """
+        Create an offer and return the full offer with details (including IDs) with HTTP 201.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        # Neu erstelltes Offer abrufen
+        offer_instance = serializer.instance
+        response_serializer = OfferWithDetailsSerializer(offer_instance)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class OfferDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    View für GET, PATCH und DELETE Operationen auf einem spezifischen Offer.
+    Retrieve, update or delete a specific offer.
     """
-    permission_classes = [IsAuthenticated, IsOfferOwner]
     
     def get_serializer_class(self):
         if self.request.method in ['PATCH', 'PUT']:
@@ -244,21 +263,22 @@ class OfferDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_permissions(self):
         if self.request.method in ['PATCH', 'PUT', 'DELETE']:
             return [IsAuthenticated(), IsOfferOwner()]
-        return [IsAuthenticated()]
+        # GET allowed without authentication
+        return [AllowAny()]
 
 
 class OfferDetailDetailView(generics.RetrieveAPIView):
     """
-    View für GET Operationen auf einem spezifischen OfferDetail.
+    Retrieve a specific OfferDetail.
     """
     serializer_class = OfferDetailSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     queryset = OfferDetail.objects.all()
 
 
 class OrderListView(generics.ListCreateAPIView):
     """
-    View für die Liste und Erstellung von Orders.
+    List orders for the current user and create new orders.
     """
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
@@ -270,7 +290,7 @@ class OrderListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         """
-        Gibt nur Orders zurück, die mit dem angemeldeten Benutzer verbunden sind.
+        Return only orders related to the authenticated user.
         """
         user = self.request.user
         return Order.objects.filter(
@@ -284,20 +304,46 @@ class OrderListView(generics.ListCreateAPIView):
     
     def list(self, request, *args, **kwargs):
         """
-        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        Always return an array (empty on errors) for consistency.
         """
         try:
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Exception as e:
-            # Bei Fehlern geben wir ein leeres Array zurück
+            # On error return an empty array
             return Response([], status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        """
+        Create an order from offer_detail_id and return the full order object with HTTP 201.
+        Return 404 if the offer_detail_id does not exist.
+        """
+        # Vorab 404 prüfen, damit der korrekte Statuscode zurückkommt
+        offer_detail_id = request.data.get('offer_detail_id')
+        if offer_detail_id is None:
+            return Response({'offer_detail_id': ['This field is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            offer_detail_id_int = int(offer_detail_id)
+        except (TypeError, ValueError):
+            return Response({'offer_detail_id': ['A valid integer is required.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not OfferDetail.objects.filter(id=offer_detail_id_int).exists():
+            return Response({'detail': 'OfferDetail not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = OrderCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        order_instance = serializer.instance
+        response_serializer = OrderSerializer(order_instance)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    View für GET, PATCH und DELETE Operationen auf einem spezifischen Order.
+    Retrieve, update or delete a specific order.
     """
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
@@ -322,7 +368,7 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class OrderCountView(generics.RetrieveAPIView):
     """
-    View für die Anzahl der laufenden Bestellungen eines Business-Users.
+    Return number of in-progress orders for a given business user.
     """
     serializer_class = OrderCountSerializer
     permission_classes = [IsAuthenticated]
@@ -342,7 +388,7 @@ class OrderCountView(generics.RetrieveAPIView):
 
 class CompletedOrderCountView(generics.RetrieveAPIView):
     """
-    View für die Anzahl der abgeschlossenen Bestellungen eines Business-Users.
+    Return number of completed orders for a given business user.
     """
     serializer_class = CompletedOrderCountSerializer
     permission_classes = [IsAuthenticated]
@@ -362,7 +408,7 @@ class CompletedOrderCountView(generics.RetrieveAPIView):
 
 class ReviewListView(generics.ListCreateAPIView):
     """
-    View für die Liste und Erstellung von Reviews.
+    List reviews (with filtering and ordering) and create new reviews.
     """
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -378,7 +424,7 @@ class ReviewListView(generics.ListCreateAPIView):
     def get_queryset(self):
         queryset = Review.objects.all()
         
-        # Filter nach business_user_id
+        # Filter by business_user_id
         business_user_id = self.request.query_params.get('business_user_id')
         if business_user_id and business_user_id.strip():
             try:
@@ -387,7 +433,7 @@ class ReviewListView(generics.ListCreateAPIView):
             except (ValueError, TypeError):
                 pass
         
-        # Filter nach reviewer_id
+        # Filter by reviewer_id
         reviewer_id = self.request.query_params.get('reviewer_id')
         if reviewer_id and reviewer_id.strip():
             try:
@@ -405,7 +451,7 @@ class ReviewListView(generics.ListCreateAPIView):
     
     def list(self, request, *args, **kwargs):
         """
-        Überschreibt die list-Methode um sicherzustellen, dass immer ein Array zurückgegeben wird.
+        Always return an array (empty on errors) for consistency.
         """
         try:
             queryset = self.filter_queryset(self.get_queryset())
@@ -415,10 +461,23 @@ class ReviewListView(generics.ListCreateAPIView):
             # Bei Fehlern geben wir ein leeres Array zurück
             return Response([], status=status.HTTP_200_OK)
 
+    def create(self, request, *args, **kwargs):
+        """
+        Create a review and return the full review (id, business_user, reviewer, rating, description, created_at, updated_at) with HTTP 201.
+        """
+        create_serializer = ReviewCreateSerializer(data=request.data, context={'request': request})
+        create_serializer.is_valid(raise_exception=True)
+        self.perform_create(create_serializer)
+
+        review_instance = create_serializer.instance
+        response_serializer = ReviewSerializer(review_instance)
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class ReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    View für GET, PATCH und DELETE Operationen auf einem spezifischen Review.
+    Retrieve, update or delete a specific review.
     """
     serializer_class = ReviewSerializer
     permission_classes = [IsAuthenticated, IsReviewOwner]
@@ -441,31 +500,31 @@ class ReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class BaseInfoView(generics.RetrieveAPIView):
     """
-    View für die Basis-Informationen der Plattform.
+    Return platform base information and aggregates.
     """
     serializer_class = BaseInfoSerializer
     permission_classes = []  # Keine Authentifizierung erforderlich
 
     def get_object(self):
         """
-        Berechnet aggregierende Informationen über die Plattform.
+        Compute and return platform aggregates.
         """
-        # Anzahl der Reviews
+        # Number of reviews
         review_count = Review.objects.count()
         
-        # Durchschnittliche Bewertung (auf eine Dezimalstelle gerundet)
+        # Average rating rounded to one decimal
         avg_rating_result = Review.objects.aggregate(avg_rating=Avg('rating'))
         average_rating = avg_rating_result['avg_rating']
         if average_rating is not None:
-            # Runde auf eine Dezimalstelle
+            # Round to one decimal place
             average_rating = round(float(average_rating), 1)
         else:
             average_rating = 0.0
         
-        # Anzahl der Business-Profile
+        # Number of business profiles
         business_profile_count = Profile.objects.filter(type='business').count()
         
-        # Anzahl der Offers
+        # Number of offers
         offer_count = Offer.objects.count()
         
         return {

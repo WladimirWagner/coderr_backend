@@ -1,11 +1,12 @@
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 from coderr_app.models import Profile, Offer, OfferDetail, Order, Review
 from django.contrib.auth.models import User
 
 
 class ProfileSerializer(serializers.ModelSerializer):
     """
-    Serializer für Profile mit allen Feldern für GET und PATCH Operationen.
+    Profile serializer for GET and PATCH operations.
     """
     user = serializers.ReadOnlyField(source='username.id')
     username = serializers.ReadOnlyField(source='username.username')
@@ -22,7 +23,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer für PATCH Operationen - erlaubt nur bestimmte Felder zu aktualisieren.
+    Serializer for PATCH operations – allows updating selected fields only.
     """
     class Meta:
         model = Profile
@@ -43,7 +44,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
 class BusinessProfileListSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Liste der Business-Profile.
+    Serializer for listing business profiles.
     """
     user = serializers.ReadOnlyField(source='username.id')
     username = serializers.ReadOnlyField(source='username.username')
@@ -57,10 +58,10 @@ class BusinessProfileListSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         """
-        Stellt sicher, dass alle Felder niemals null sind, sondern leere Strings.
+        Ensure string fields are never null (fallback to empty string).
         """
         data = super().to_representation(instance)
-        # Stelle sicher, dass alle Felder niemals null sind
+        # Ensure fields are never null
         for field in ['first_name', 'last_name', 'location', 'tel', 'description', 'working_hours']:
             if data.get(field) is None:
                 data[field] = ''
@@ -69,7 +70,7 @@ class BusinessProfileListSerializer(serializers.ModelSerializer):
 
 class CustomerProfileListSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Liste der Customer-Profile.
+    Serializer for listing customer profiles.
     """
     user = serializers.ReadOnlyField(source='username.id')
     username = serializers.ReadOnlyField(source='username.username')
@@ -83,10 +84,10 @@ class CustomerProfileListSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         """
-        Stellt sicher, dass alle Felder niemals null sind, sondern leere Strings.
+        Ensure string fields are never null (fallback to empty string).
         """
         data = super().to_representation(instance)
-        # Stelle sicher, dass alle Felder niemals null sind
+        # Ensure fields are never null
         for field in ['first_name', 'last_name', 'location', 'tel', 'description', 'working_hours']:
             if data.get(field) is None:
                 data[field] = ''
@@ -95,7 +96,7 @@ class CustomerProfileListSerializer(serializers.ModelSerializer):
 
 class OfferDetailSerializer(serializers.ModelSerializer):
     """
-    Serializer für OfferDetail mit allen Feldern.
+    Offer detail serializer with all fields.
     """
     class Meta:
         model = OfferDetail
@@ -105,9 +106,20 @@ class OfferDetailSerializer(serializers.ModelSerializer):
         ]
 
 
+class OfferWithDetailsSerializer(serializers.ModelSerializer):
+    """
+    Offer serializer with all related details (used for POST /offers/ response).
+    """
+    details = OfferDetailSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Offer
+        fields = ['id', 'title', 'image', 'description', 'details']
+
+
 class OfferDetailCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Erstellung von OfferDetails.
+    Create serializer for offer details.
     """
     class Meta:
         model = OfferDetail
@@ -119,7 +131,7 @@ class OfferDetailCreateSerializer(serializers.ModelSerializer):
 
 class OfferDetailUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Aktualisierung von OfferDetails.
+    Update serializer for offer details.
     """
     class Meta:
         model = OfferDetail
@@ -131,7 +143,7 @@ class OfferDetailUpdateSerializer(serializers.ModelSerializer):
 
 class OfferDetailListSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Liste von OfferDetails (nur ID und URL).
+    Lightweight list serializer for offer details (id and URL only).
     """
     url = serializers.SerializerMethodField()
 
@@ -148,7 +160,7 @@ class OfferDetailListSerializer(serializers.ModelSerializer):
 
 class UserDetailsSerializer(serializers.ModelSerializer):
     """
-    Serializer für Benutzerdetails in Offer-Listen.
+    Embedded user details for offer listings.
     """
     first_name = serializers.CharField(source='profile.first_name', allow_blank=True, default='')
     last_name = serializers.CharField(source='profile.last_name', allow_blank=True, default='')
@@ -160,12 +172,12 @@ class UserDetailsSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         """
-        Überschreibt die Darstellung um sicherzustellen, dass immer gültige Werte zurückgegeben werden.
+        Ensure robust representation when profile information is missing.
         """
         try:
             return super().to_representation(instance)
         except Exception:
-            # Fallback wenn Profile nicht existiert
+            # Fallback when profile does not exist
             return {
                 'first_name': getattr(instance.profile, 'first_name', '') if hasattr(instance, 'profile') and instance.profile else '',
                 'last_name': getattr(instance.profile, 'last_name', '') if hasattr(instance, 'profile') and instance.profile else '',
@@ -175,7 +187,7 @@ class UserDetailsSerializer(serializers.ModelSerializer):
 
 class OfferListSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Liste von Offers mit minimalen Informationen.
+    Offer list serializer with minimal fields and aggregates.
     """
     user = serializers.ReadOnlyField(source='user.username.id')
     details = OfferDetailListSerializer(many=True, read_only=True)
@@ -190,12 +202,12 @@ class OfferListSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         """
-        Überschreibt die Darstellung um sicherzustellen, dass immer gültige Werte zurückgegeben werden.
+        Ensure robust representation if related data is missing.
         """
         try:
             return super().to_representation(instance)
         except Exception as e:
-            # Fallback bei Fehlern
+            # Fallback on serialization errors
             return {
                 'id': getattr(instance, 'id', None),
                 'user': getattr(instance.user.username, 'id', None) if instance.user and hasattr(instance.user, 'username') else None,
@@ -217,7 +229,7 @@ class OfferListSerializer(serializers.ModelSerializer):
 
 class OfferDetailViewSerializer(serializers.ModelSerializer):
     """
-    Serializer für ein einzelnes Offer mit allen Details.
+    Single-offer serializer with all details.
     """
     user = serializers.ReadOnlyField(source='user.username.id')
     details = OfferDetailListSerializer(many=True, read_only=True)
@@ -232,7 +244,7 @@ class OfferDetailViewSerializer(serializers.ModelSerializer):
 
 class OfferCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Erstellung von Offers mit Details.
+    Create serializer for offers with details.
     """
     details = OfferDetailCreateSerializer(many=True)
 
@@ -242,7 +254,7 @@ class OfferCreateSerializer(serializers.ModelSerializer):
 
     def validate_details(self, value):
         """
-        Validiert, dass mindestens 3 Details vorhanden sind.
+        Ensure at least 3 details are provided.
         """
         if len(value) < 3:
             raise serializers.ValidationError("Ein Angebot muss mindestens 3 Details haben.")
@@ -274,12 +286,12 @@ class OfferUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         details_data = validated_data.pop('details', None)
         
-        # Update Offer fields
+        # Update offer fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
         
-        # Update details if provided
+        # Replace details if provided
         if details_data is not None:
             # Delete existing details
             instance.details.all().delete()
@@ -293,7 +305,7 @@ class OfferUpdateSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     """
-    Serializer für Orders mit allen Feldern.
+    Order serializer with all fields for read operations.
     """
     customer_user = serializers.ReadOnlyField(source='customer_user.username.id')
     business_user = serializers.ReadOnlyField(source='business_user.username.id')
@@ -313,10 +325,10 @@ class OrderSerializer(serializers.ModelSerializer):
     
     def to_representation(self, instance):
         """
-        Stellt sicher, dass alle Felder korrekt serialisiert werden.
+        Ensure representation has a list for features even if null.
         """
         data = super().to_representation(instance)
-        # Stelle sicher, dass features immer eine Liste ist
+        # Ensure features is always a list
         if data.get('features') is None:
             data['features'] = []
         return data
@@ -324,7 +336,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
 class OrderCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Erstellung von Orders.
+    Create serializer for orders.
     """
     offer_detail_id = serializers.IntegerField(write_only=True)
 
@@ -334,7 +346,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
 
     def validate_offer_detail_id(self, value):
         """
-        Validiert, dass das OfferDetail existiert.
+        Validate that the referenced OfferDetail exists.
         """
         try:
             OfferDetail.objects.get(id=value)
@@ -343,24 +355,22 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        """Create order for current authenticated customer user."""
         offer_detail_id = validated_data.pop('offer_detail_id')
         offer_detail = OfferDetail.objects.get(id=offer_detail_id)
-        
         user = self.context['request'].user
         customer_profile = Profile.objects.get(username=user)
-        
         order = Order.objects.create(
             customer_user=customer_profile,
             offer_detail=offer_detail,
             **validated_data
         )
-        
         return order
 
 
 class OrderUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Aktualisierung von Orders (nur Status).
+    Update serializer for orders (status only).
     """
     class Meta:
         model = Order
@@ -368,7 +378,7 @@ class OrderUpdateSerializer(serializers.ModelSerializer):
 
     def validate_status(self, value):
         """
-        Validiert, dass der Status gültig ist.
+        Validate that status is one of the allowed values.
         """
         valid_statuses = ['in_progress', 'completed', 'cancelled']
         if value not in valid_statuses:
@@ -378,21 +388,21 @@ class OrderUpdateSerializer(serializers.ModelSerializer):
 
 class OrderCountSerializer(serializers.Serializer):
     """
-    Serializer für Order-Count-Endpunkte.
+    Serializer for in-progress order counts.
     """
     order_count = serializers.IntegerField()
 
 
 class CompletedOrderCountSerializer(serializers.Serializer):
     """
-    Serializer für Completed-Order-Count-Endpunkte.
+    Serializer for completed order counts.
     """
     completed_order_count = serializers.IntegerField()
 
 
 class ReviewSerializer(serializers.ModelSerializer):
     """
-    Serializer für Reviews mit allen Feldern.
+    Review serializer with all fields.
     """
     business_user = serializers.ReadOnlyField(source='business_user.username.id')
     reviewer = serializers.ReadOnlyField(source='reviewer.username.id')
@@ -408,7 +418,7 @@ class ReviewSerializer(serializers.ModelSerializer):
 
 class ReviewCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Erstellung von Reviews.
+    Create serializer for reviews.
     """
     business_user = serializers.IntegerField(write_only=True)
 
@@ -418,7 +428,7 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
 
     def validate_business_user(self, value):
         """
-        Validiert, dass der Business-User existiert und vom Typ 'business' ist.
+        Validate that the business user exists and is of type 'business'.
         """
         try:
             business_user = User.objects.get(id=value)
@@ -429,7 +439,7 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        Validiert, dass der Reviewer nur eine Bewertung pro Business-User abgeben kann.
+        Ensure a reviewer can only create one review per business user.
         """
         user = self.context['request'].user
         reviewer_profile = Profile.objects.get(username=user)
@@ -439,7 +449,8 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
         
         # Prüfe, ob bereits eine Bewertung existiert
         if Review.objects.filter(reviewer=reviewer_profile, business_user=business_profile).exists():
-            raise serializers.ValidationError("Sie haben bereits eine Bewertung für diesen Business-User abgegeben.")
+            # 403 laut Spezifikation: Ein Benutzer darf nur eine Bewertung pro Business-Profil abgeben
+            raise PermissionDenied("Sie haben bereits eine Bewertung für diesen Business-User abgegeben.")
         
         return data
 
@@ -462,7 +473,7 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
 
 class ReviewUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializer für die Aktualisierung von Reviews (nur rating und description).
+    Update serializer for reviews (rating and description only).
     """
     class Meta:
         model = Review
@@ -470,7 +481,7 @@ class ReviewUpdateSerializer(serializers.ModelSerializer):
 
     def validate_rating(self, value):
         """
-        Validiert, dass die Bewertung zwischen 1 und 5 liegt.
+        Validate that rating is between 1 and 5.
         """
         if value < 1 or value > 5:
             raise serializers.ValidationError("Die Bewertung muss zwischen 1 und 5 liegen.")
@@ -479,7 +490,7 @@ class ReviewUpdateSerializer(serializers.ModelSerializer):
 
 class BaseInfoSerializer(serializers.Serializer):
     """
-    Serializer für die Basis-Informationen der Plattform.
+    Serializer for platform base information.
     """
     review_count = serializers.IntegerField()
     average_rating = serializers.FloatField()
