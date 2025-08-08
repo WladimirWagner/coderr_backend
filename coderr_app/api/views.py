@@ -43,7 +43,7 @@ class ProfileDetailView(generics.RetrieveUpdateAPIView):
     Retrieve and partially update a specific profile.
     """
     serializer_class = ProfileSerializer
-    permission_classes = [IsAuthenticated, IsProfileOwner]
+    permission_classes = [IsAuthenticated]
     
     def get_object(self):
         """
@@ -61,6 +61,15 @@ class ProfileDetailView(generics.RetrieveUpdateAPIView):
         if self.request.method == 'PATCH':
             return ProfileUpdateSerializer
         return ProfileSerializer
+
+    def get_permissions(self):
+        """
+        GET: any authenticated user can view profiles.
+        PATCH/PUT: only the profile owner can update.
+        """
+        if self.request.method in ['PATCH', 'PUT']:
+            return [IsAuthenticated(), IsProfileOwner()]
+        return [IsAuthenticated()]
     
     def patch(self, request, *args, **kwargs):
         """
@@ -263,8 +272,22 @@ class OfferDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_permissions(self):
         if self.request.method in ['PATCH', 'PUT', 'DELETE']:
             return [IsAuthenticated(), IsOfferOwner()]
-        # GET allowed without authentication
-        return [AllowAny()]
+        # GET requires authentication per documentation
+        return [IsAuthenticated()]
+
+    def update(self, request, *args, **kwargs):
+        """
+        Partially or fully update an offer using OfferUpdateSerializer,
+        then return the full offer payload (including id and details with ids).
+        """
+        partial = request.method.lower() == 'patch'
+        instance = self.get_object()
+        serializer = OfferUpdateSerializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        response_serializer = OfferWithDetailsSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 class OfferDetailDetailView(generics.RetrieveAPIView):
@@ -272,7 +295,7 @@ class OfferDetailDetailView(generics.RetrieveAPIView):
     Retrieve a specific OfferDetail.
     """
     serializer_class = OfferDetailSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     queryset = OfferDetail.objects.all()
 
 
@@ -299,7 +322,7 @@ class OrderListView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsCustomerUser()]
+            return [IsAuthenticated(), IsCustomerUser()]
         return [IsAuthenticated()]
     
     def list(self, request, *args, **kwargs):
@@ -362,8 +385,22 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
         elif self.request.method in ['PATCH', 'PUT']:
             return [IsAuthenticated(), IsBusinessOrderOwner()]
         elif self.request.method == 'DELETE':
-            return [IsStaffUser()]
+            return [IsAuthenticated(), IsStaffUser()]
         return [IsAuthenticated()]
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update order status using OrderUpdateSerializer and
+        return the full order payload (including id and timestamps).
+        """
+        partial = request.method.lower() == 'patch'
+        instance = self.get_object()
+        serializer = OrderUpdateSerializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        response_serializer = OrderSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 class OrderCountView(generics.RetrieveAPIView):
@@ -446,7 +483,7 @@ class ReviewListView(generics.ListCreateAPIView):
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsCustomerUser()]
+            return [IsAuthenticated(), IsCustomerUser()]
         return [IsAuthenticated()]
     
     def list(self, request, *args, **kwargs):
@@ -496,6 +533,20 @@ class ReviewDetailView(generics.RetrieveUpdateDestroyAPIView):
         elif self.request.method in ['PATCH', 'PUT', 'DELETE']:
             return [IsAuthenticated(), IsReviewOwner()]
         return [IsAuthenticated()]
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update a review (rating/description) and return the full review payload
+        including id, business_user, reviewer, timestamps.
+        """
+        partial = request.method.lower() == 'patch'
+        instance = self.get_object()
+        serializer = ReviewUpdateSerializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        response_serializer = ReviewSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
 class BaseInfoView(generics.RetrieveAPIView):
