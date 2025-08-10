@@ -1,7 +1,9 @@
 from rest_framework import status, generics
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.renderers import JSONRenderer
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.shortcuts import get_object_or_404
@@ -52,6 +54,8 @@ class ProfileDetailView(generics.RetrieveUpdateAPIView):
         user_id = self.kwargs.get('pk')
         user = get_object_or_404(User, id=user_id)
         profile = get_object_or_404(Profile, username=user)
+        # Enforce object-level permissions (403 if not owner on write ops)
+        self.check_object_permissions(self.request, profile)
         return profile
     
     def get_serializer_class(self):
@@ -183,8 +187,7 @@ class OfferListView(generics.ListCreateAPIView):
                 creator_id_int = int(creator_id)
                 queryset = queryset.filter(user__username__id=creator_id_int)
             except (ValueError, TypeError):
-                # Ignore filter if conversion fails
-                pass
+                raise ValidationError({"creator_id": ["Invalid integer value."]})
         
         # Filter by min_price
         min_price = self.request.query_params.get('min_price')
@@ -193,8 +196,7 @@ class OfferListView(generics.ListCreateAPIView):
                 min_price_decimal = Decimal(min_price)
                 queryset = queryset.filter(details__price__gte=min_price_decimal).distinct()
             except (ValueError, TypeError):
-                # Ignore filter if conversion fails
-                pass
+                raise ValidationError({"min_price": ["Invalid decimal value."]})
         
         # Filter by max_delivery_time
         max_delivery_time = self.request.query_params.get('max_delivery_time')
@@ -203,8 +205,7 @@ class OfferListView(generics.ListCreateAPIView):
                 max_delivery_time_int = int(max_delivery_time)
                 queryset = queryset.filter(details__delivery_time_in_days__lte=max_delivery_time_int).distinct()
             except (ValueError, TypeError):
-                # Ignore filter if conversion fails
-                pass
+                raise ValidationError({"max_delivery_time": ["Invalid integer value."]})
         
         return queryset
 
@@ -216,30 +217,20 @@ class OfferListView(generics.ListCreateAPIView):
     
     def list(self, request, *args, **kwargs):
         """
-        Return paginated response or a consistent results envelope.
+        Return paginated response or a consistent results envelope. ValidationError -> 400.
         """
-        try:
-            queryset = self.filter_queryset(self.get_queryset())
-            page = self.paginate_queryset(queryset)
-            if page is not None:
-                serializer = self.get_serializer(page, many=True)
-                return self.get_paginated_response(serializer.data)
-            
-            serializer = self.get_serializer(queryset, many=True)
-            return Response({
-                'count': len(serializer.data),
-                'next': None,
-                'previous': None,
-                'results': serializer.data
-            })
-        except Exception as e:
-            # Fallback on error
-            return Response({
-                'count': 0,
-                'next': None,
-                'previous': None,
-                'results': []
-            }, status=status.HTTP_200_OK)
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'count': len(serializer.data),
+            'next': None,
+            'previous': None,
+            'results': serializer.data
+        })
 
     def create(self, request, *args, **kwargs):
         """
@@ -284,6 +275,9 @@ class OfferDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         serializer = OfferUpdateSerializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
+        # Enforce at least one updatable field present
+        if not serializer.validated_data and 'details' not in request.data:
+            raise ValidationError({"non_field_errors": ["No updatable fields provided."]})
         self.perform_update(serializer)
 
         response_serializer = OfferWithDetailsSerializer(instance)
@@ -393,6 +387,16 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
         Update order status using OrderUpdateSerializer and
         return the full order payload (including id and timestamps).
         """
+        # Pre-validate status to ensure 400 is returned on invalid payloads
+        if request.method.lower() in ['patch', 'put']:
+            data_status = request.data.get('status', None)
+            if data_status is None:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"status": ["This field is required."]})
+            if data_status not in ['in_progress', 'completed', 'cancelled']:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"status": ["Invalid status. Allowed: in_progress, completed, cancelled."]})
+
         partial = request.method.lower() == 'patch'
         instance = self.get_object()
         serializer = OrderUpdateSerializer(instance, data=request.data, partial=partial)
@@ -409,17 +413,21 @@ class OrderCountView(generics.RetrieveAPIView):
     """
     serializer_class = OrderCountSerializer
     permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer]
 
     def get_object(self):
         business_user_id = self.kwargs.get('business_user_id')
-        business_user = get_object_or_404(User, id=business_user_id)
-        profile = get_object_or_404(Profile, username=business_user, type='business')
-        
+        # Accept either Profile.id (preferred by some clients) or User.id
+        profile = Profile.objects.filter(id=business_user_id, type='business').first()
+        if profile is None:
+            business_user = get_object_or_404(User, id=business_user_id)
+            profile = get_object_or_404(Profile, username=business_user, type='business')
+
         order_count = Order.objects.filter(
             business_user=profile,
             status='in_progress'
         ).count()
-        
+
         return {'order_count': order_count}
 
 
@@ -429,17 +437,21 @@ class CompletedOrderCountView(generics.RetrieveAPIView):
     """
     serializer_class = CompletedOrderCountSerializer
     permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer]
 
     def get_object(self):
         business_user_id = self.kwargs.get('business_user_id')
-        business_user = get_object_or_404(User, id=business_user_id)
-        profile = get_object_or_404(Profile, username=business_user, type='business')
-        
+        # Accept either Profile.id or User.id
+        profile = Profile.objects.filter(id=business_user_id, type='business').first()
+        if profile is None:
+            business_user = get_object_or_404(User, id=business_user_id)
+            profile = get_object_or_404(Profile, username=business_user, type='business')
+
         completed_order_count = Order.objects.filter(
             business_user=profile,
             status='completed'
         ).count()
-        
+
         return {'completed_order_count': completed_order_count}
 
 
