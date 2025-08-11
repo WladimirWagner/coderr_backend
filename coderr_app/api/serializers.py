@@ -302,6 +302,25 @@ class OfferUpdateSerializer(serializers.ModelSerializer):
         
         return instance
 
+    def validate(self, attrs):
+        """
+        When updating details, enforce that each detail includes offer_type
+        to identify the tier explicitly. Missing offer_type should yield 400.
+        """
+        request_data = self.initial_data or {}
+        details_payload = request_data.get('details', None)
+        if details_payload is not None:
+            if not isinstance(details_payload, list) or len(details_payload) == 0:
+                raise serializers.ValidationError({
+                    'details': ['Provide at least one detail or omit the field.']
+                })
+            for idx, item in enumerate(details_payload):
+                if 'offer_type' not in item or not item.get('offer_type'):
+                    raise serializers.ValidationError({
+                        f'details[{idx}].offer_type': ['This field is required.']
+                    })
+        return attrs
+
 
 class OrderSerializer(serializers.ModelSerializer):
     """

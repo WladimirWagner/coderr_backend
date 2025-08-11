@@ -387,6 +387,9 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
         Update order status using OrderUpdateSerializer and
         return the full order payload (including id and timestamps).
         """
+        # Load instance first; if not found -> 404 (resource missing)
+        instance = self.get_object()
+
         # Pre-validate status to ensure 400 is returned on invalid payloads
         if request.method.lower() in ['patch', 'put']:
             data_status = request.data.get('status', None)
@@ -398,9 +401,10 @@ class OrderDetailView(generics.RetrieveUpdateDestroyAPIView):
                 raise ValidationError({"status": ["Invalid status. Allowed: in_progress, completed, cancelled."]})
 
         partial = request.method.lower() == 'patch'
-        instance = self.get_object()
         serializer = OrderUpdateSerializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
+        # Explicit permission check for business ownership (403 if not allowed)
+        self.check_object_permissions(request, instance)
         self.perform_update(serializer)
 
         response_serializer = OrderSerializer(instance)
